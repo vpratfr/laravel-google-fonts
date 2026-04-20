@@ -52,6 +52,15 @@ class GoogleFonts
         }
     }
 
+    public function fontPath(string $font, string $path = ''): string
+    {
+        if (! isset($this->fonts[$font])) {
+            throw new RuntimeException("Font `{$font}` doesn't exist");
+        }
+
+        return $this->filesystem->path($this->path($this->fonts[$font], $path));
+    }
+
     protected function loadLocal(string $url, ?string $nonce): ?Fonts
     {
         if (! $this->filesystem->exists($this->path($url, 'fonts.css'))) {

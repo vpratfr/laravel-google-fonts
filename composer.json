@@ -1,24 +1,25 @@
 {
-    "name": "spatie/laravel-google-fonts",
+    "name": "vpratfr/laravel-google-fonts",
     "description": "Manage self-hosted Google Fonts in Laravel apps",
     "keywords": [
-        "spatie",
         "laravel",
         "laravel-google-fonts",
         "Google Fonts"
     ],
-    "homepage": "https://github.com/spatie/laravel-google-fonts",
+    "homepage": "https://github.com/vpratfr/laravel-google-fonts",
     "license": "MIT",
     "authors": [
         {
-            "name": "Sebastian De Deyne",
-            "email": "sebastian@spatie.be",
+            "name": "Sébastien Girard",
             "role": "Developer"
         },
         {
-            "name": "Freek Van der herten",
-            "email": "freek@spatie.be",
+            "name": "Vincent Mimoun-Prat",
             "role": "Developer"
+        },
+        {
+            "name": "Spatie",
+            "role": "Original author"
         }
     ],
     "require": {

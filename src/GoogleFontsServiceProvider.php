@@ -30,6 +30,7 @@ class GoogleFontsServiceProvider extends PackageServiceProvider
                 userAgent: config('google-fonts.user_agent'),
                 fonts: config('google-fonts.fonts'),
                 preload: config('google-fonts.preload', false),
+                poolSize: config('google-fonts.batch_pool_size'),
             );
         });
     }

@@ -58,7 +58,7 @@ class GoogleFonts
             throw new RuntimeException("Font `{$font}` doesn't exist");
         }
 
-        return $this->filesystem->path($this->path($this->fonts[$font], $path));
+        return $this->path($this->fonts[$font], $path);
     }
 
     protected function loadLocal(string $url, ?string $nonce): ?Fonts

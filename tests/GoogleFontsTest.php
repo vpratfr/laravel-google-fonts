@@ -118,7 +118,7 @@ it('can generate a font path from font name', function () {
 
     $expectedIdentifier = substr(md5('moo'), 0, 10);
 
-    expect($path)->toEndWith("fonts/{$expectedIdentifier}");
+    expect($path)->toEqual($expectedIdentifier);
 });
 
 it('keeps font path deterministic', function () {

@@ -57,13 +57,13 @@ class GoogleFonts
      * @return Fonts[]
      * @throws Exception
      */
-    public function loadBatched(array $options = [], bool $forceDownload = false): array
+    public function loadMany(array $options = [], bool $forceDownload = false): array
     {
         $fonts = $this->resolveFonts($options);
 
         try {
             if ($forceDownload) {
-                return $this->fetchBatched($fonts);
+                return $this->fetchMany($fonts);
             }
 
             $loaded = $fonts->map(fn (array $font) => $this->loadLocal($font['url'], $font['nonce']));
@@ -72,7 +72,7 @@ class GoogleFonts
                 ->mapWithKeys(fn (string $font) => [$font => $fonts->get($font)]);
 
             if ($missing->isNotEmpty()) {
-                return $this->fetchBatched($missing);
+                return $this->fetchMany($missing);
             }
 
             return $loaded->values()->all();
@@ -119,7 +119,7 @@ class GoogleFonts
      *
      * @return Fonts[]
      */
-    protected function fetchBatched(Collection $fonts): array
+    protected function fetchMany(Collection $fonts): array
     {
         $cssResponses = $this->fetchCssResponses($fonts);
         [$fontMap, $woffUrls] = $this->buildFontMap($fonts, $cssResponses);

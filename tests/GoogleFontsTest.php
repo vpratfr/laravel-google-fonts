@@ -188,26 +188,26 @@ it('generates preload tags pointing to localized urls', function () {
         ->not->toContain('fonts.gstatic.com');
 });
 
-it('loads multiple fonts in batch as strings', function () {
+it('loads multiple fonts as strings', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    $results = app(GoogleFonts::class)->loadBatched(['inter', 'code'], forceDownload: true);
+    $results = app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
 
     expect($results)
         ->toHaveCount(2)
         ->each->toBeInstanceOf(Fonts::class);
 });
 
-it('loads multiple fonts in batch as arrays', function () {
+it('loads multiple fonts as arrays', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    $results = app(GoogleFonts::class)->loadBatched(
+    $results = app(GoogleFonts::class)->loadMany(
         [['font' => 'inter'], ['font' => 'code']],
         forceDownload: true
     );
@@ -217,13 +217,13 @@ it('loads multiple fonts in batch as arrays', function () {
         ->each->toBeInstanceOf(Fonts::class);
 });
 
-it('persists css and woff2 files for each batched font', function () {
+it('persists css and woff2 files for each font', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    app(GoogleFonts::class)->loadBatched(['inter', 'code'], forceDownload: true);
+    app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
 
     $interIdentifier = substr(md5('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'), 0, 10);
     $codeIdentifier = substr(md5('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'), 0, 10);
@@ -238,13 +238,13 @@ it('persists css and woff2 files for each batched font', function () {
     expect($woff2Count)->toBeGreaterThan(0);
 });
 
-it('preserves nonce per font in batched load', function () {
+it('preserves nonce per font in load many', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    [$inter, $code] = app(GoogleFonts::class)->loadBatched(
+    [$inter, $code] = app(GoogleFonts::class)->loadMany(
         [
             ['font' => 'inter', 'nonce' => 'nonce-inter'],
             ['font' => 'code',  'nonce' => 'nonce-code'],
@@ -256,13 +256,13 @@ it('preserves nonce per font in batched load', function () {
         ->and((string)$code->link())->toContain('nonce="nonce-code"');
 });
 
-it('returns localized urls in batched load, not google fonts urls', function () {
+it('returns localized urls in load many, not google fonts urls', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    $results = app(GoogleFonts::class)->loadBatched(['inter', 'code'], forceDownload: true);
+    $results = app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
 
     foreach ($results as $fonts) {
         expect($fonts->url())
@@ -270,7 +270,7 @@ it('returns localized urls in batched load, not google fonts urls', function () 
     }
 });
 
-it('serves batched fonts from local cache without re-downloading', function () {
+it('serves many fonts from local cache without re-downloading', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
@@ -278,16 +278,16 @@ it('serves batched fonts from local cache without re-downloading', function () {
 
     $googleFonts = app(GoogleFonts::class);
 
-    $googleFonts->loadBatched(['inter', 'code'], forceDownload: true);
+    $googleFonts->loadMany(['inter', 'code'], forceDownload: true);
 
     $filesAfterFirstLoad = $this->disk()->allFiles();
 
-    $googleFonts->loadBatched(['inter', 'code']);
+    $googleFonts->loadMany(['inter', 'code']);
 
     expect($this->disk()->allFiles())->toEqual($filesAfterFirstLoad);
 });
 
-it('only re-downloads missing fonts in batched load', function () {
+it('only re-downloads missing fonts in load many', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
@@ -299,7 +299,7 @@ it('only re-downloads missing fonts in batched load', function () {
 
     $filesAfterInterLoad = $this->disk()->allFiles();
 
-    $googleFonts->loadBatched(['inter', 'code']);
+    $googleFonts->loadMany(['inter', 'code']);
 
     $codeIdentifier = substr(md5('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'), 0, 10);
 
@@ -310,7 +310,7 @@ it('only re-downloads missing fonts in batched load', function () {
     }
 });
 
-it('falls back to google fonts urls in batched load when fetching fails', function () {
+it('falls back to google fonts urls in load many when fetching fails', function () {
     Http::fake(['*' => Http::response('', 500)]);
 
     config()->set('google-fonts.fonts', [
@@ -319,7 +319,7 @@ it('falls back to google fonts urls in batched load when fetching fails', functi
     ]);
     config()->set('google-fonts.fallback', true);
 
-    $results = app(GoogleFonts::class)->loadBatched(['cow', 'dog'], forceDownload: true);
+    $results = app(GoogleFonts::class)->loadMany(['cow', 'dog'], forceDownload: true);
 
     expect($results)->toHaveCount(2);
 
@@ -329,35 +329,35 @@ it('falls back to google fonts urls in batched load when fetching fails', functi
         ->and((string)$results[1]->fallback())->toContain('fake-url.test/dog.css');
 });
 
-it('throws RuntimeException in batched load when font does not exist', function () {
-    expect(fn () => app(GoogleFonts::class)->loadBatched(['unknown']))
+it('throws RuntimeException in load many when font does not exist', function () {
+    expect(fn () => app(GoogleFonts::class)->loadMany(['unknown']))
         ->toThrow(RuntimeException::class, "Font `unknown` doesn't exist");
 });
 
-it('throws RuntimeException in batched load when fallback is disabled and fetching fails', function () {
+it('throws RuntimeException in load many when fallback is disabled and fetching fails', function () {
     Http::fake(['*' => Http::response('', 500)]);
 
     config()->set('google-fonts.fonts', ['cow' => 'https://fake-url.test/fonts.css']);
     config()->set('google-fonts.fallback', false);
 
-    expect(fn () => app(GoogleFonts::class)->loadBatched(['cow'], forceDownload: true))
+    expect(fn () => app(GoogleFonts::class)->loadMany(['cow'], forceDownload: true))
         ->toThrow(Exception::class);
 });
 
-it('handles a single font in batched load identically to load()', function () {
+it('handles a single font in load many identically to load()', function () {
     $single = app(GoogleFonts::class)->load('inter', forceDownload: true);
-    $batched = app(GoogleFonts::class)->loadBatched(['inter'], forceDownload: true)[0];
+    $many = app(GoogleFonts::class)->loadMany(['inter'], forceDownload: true)[0];
 
-    expect($single->url())->toBe($batched->url());
+    expect($single->url())->toBe($many->url());
 });
 
-it('returns fonts in the same order as the input in batched load', function () {
+it('returns fonts in the same order as the input in load many', function () {
     config()->set('google-fonts.fonts', [
         'inter' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
         'code' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',
     ]);
 
-    [$first, $second] = app(GoogleFonts::class)->loadBatched(['inter', 'code'], forceDownload: true);
+    [$first, $second] = app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
 
     $interIdentifier = substr(md5('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'), 0, 10);
     $codeIdentifier = substr(md5('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'), 0, 10);

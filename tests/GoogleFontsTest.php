@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Spatie\GoogleFonts\Fonts;
 use Spatie\GoogleFonts\GoogleFonts;
+use Spatie\GoogleFonts\Enums\FetchMode;
 
 use function Spatie\Snapshots\assertMatchesFileSnapshot;
 use function Spatie\Snapshots\assertMatchesHtmlSnapshot;
@@ -187,8 +188,8 @@ it('generates a valid preload link tag', function () {
 it('downloads ttf font when a ttf url is configured', function () {
     config()->set('google-fonts.fonts', [
         'inter' => [
-            'css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400',
-            'ttf' => 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2',
+            'css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700',
+            'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf',
         ],
     ]);
 
@@ -199,13 +200,6 @@ it('downloads ttf font when a ttf url is configured', function () {
 });
 
 it('skips ttf download when already cached', function () {
-    config()->set('google-fonts.fonts', [
-        'inter' => [
-            'css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400',
-            'ttf' => 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2',
-        ],
-    ]);
-
     $googleFonts = app(GoogleFonts::class);
     $googleFonts->load('inter', forceDownload: true);
 
@@ -218,13 +212,6 @@ it('skips ttf download when already cached', function () {
 });
 
 it('re-downloads ttf when forceDownload is true', function () {
-    config()->set('google-fonts.fonts', [
-        'inter' => [
-            'css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400',
-            'ttf' => 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2',
-        ],
-    ]);
-
     $googleFonts = app(GoogleFonts::class);
     $googleFonts->load('inter', forceDownload: true);
 
@@ -389,4 +376,77 @@ it('throws in loadMany when fallback is disabled and fetching fails', function (
 
     expect(fn () => app(GoogleFonts::class)->loadMany(['cow'], forceDownload: true))
         ->toThrow(Exception::class);
+});
+
+it('does not download ttf when mode is CSS', function () {
+    app(GoogleFonts::class)->load('inter', forceDownload: true, mode: FetchMode::Css);
+
+    $identifier = substr(md5('inter'), 0, 10);
+
+    $this->disk()->assertExists("$identifier/fonts.css");
+    $this->disk()->assertMissing("$identifier/font.ttf");
+});
+
+it('downloads only ttf when mode is TTF', function () {
+    app(GoogleFonts::class)->load('inter', forceDownload: true, mode: FetchMode::Ttf);
+
+    $identifier = substr(md5('inter'), 0, 10);
+
+    $this->disk()->assertExists("$identifier/font.ttf");
+    $this->disk()->assertMissing("$identifier/fonts.css");
+
+    $woff2Count = collect($this->disk()->allFiles())
+        ->filter(fn (string $path) => Str::endsWith($path, '.woff2'))
+        ->count();
+
+    expect($woff2Count)->toBe(0);
+});
+
+it('downloads both css and ttf when mode is ALL', function () {
+    app(GoogleFonts::class)->load('inter', forceDownload: true, mode: FetchMode::All);
+
+    $identifier = substr(md5('inter'), 0, 10);
+
+    $this->disk()->assertExists("$identifier/fonts.css");
+    $this->disk()->assertExists("$identifier/font.ttf");
+
+    $woff2Count = collect($this->disk()->allFiles())
+        ->filter(fn (string $path) => Str::endsWith($path, '.woff2'))
+        ->count();
+
+    expect($woff2Count)->toBeGreaterThan(0);
+});
+
+it('returns fonts without css when mode is TTF', function () {
+    $fonts = app(GoogleFonts::class)->load('inter', forceDownload: true, mode: FetchMode::Ttf);
+
+    expect((string) $fonts->link())->toContain('fonts.googleapis.com')
+        ->and((string) $fonts->inline())->toContain('fonts.googleapis.com');
+});
+
+it('does not download any ttf in loadMany when mode is CSS', function () {
+    config()->set('google-fonts.fonts', [
+        'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700', 'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf'],
+        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
+    ]);
+
+    app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true, mode: FetchMode::Css);
+
+    $this->disk()->assertMissing(substr(md5('inter'), 0, 10) . '/font.ttf');
+    $this->disk()->assertMissing(substr(md5('code'), 0, 10) . '/font.ttf');
+});
+
+it('downloads only ttf in loadMany when mode is TTF', function () {
+    config()->set('google-fonts.fonts', [
+        'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700', 'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf'],
+        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
+    ]);
+
+    app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true, mode: FetchMode::Ttf);
+
+    $this->disk()->assertExists(substr(md5('inter'), 0, 10) . '/font.ttf');
+    $this->disk()->assertExists(substr(md5('code'), 0, 10) . '/font.ttf');
+
+    $this->disk()->assertMissing(substr(md5('inter'), 0, 10) . '/fonts.css');
+    $this->disk()->assertMissing(substr(md5('code'), 0, 10) . '/fonts.css');
 });

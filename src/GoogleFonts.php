@@ -12,6 +12,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Spatie\GoogleFonts\Enums\FetchMode;
 
 class GoogleFonts
 {
@@ -35,15 +36,21 @@ class GoogleFonts
     /**
      * @throws Exception
      */
-    public function load(string|array $options = [], bool $forceDownload = false): Fonts
+    public function load(string|array $options = [], bool $forceDownload = false, FetchMode $mode = FetchMode::All): Fonts
     {
         ['font' => $font, 'nonce' => $nonce] = $this->parseOptions($options);
 
-        $this->downloadTtfFonts([$font], $forceDownload);
+        if ($mode->shouldFetchTtf()) {
+            $this->downloadTtfFonts([$font], $forceDownload);
+        }
 
         $cssUrl = $this->resolveCssFont($font);
 
         try {
+            if (! $mode->shouldFetchCss()) {
+                return new Fonts(googleFontsUrl: $cssUrl, nonce: $nonce);
+            }
+
             return $forceDownload
                 ? $this->fetch($font, $cssUrl, $nonce)
                 : $this->loadLocal($font, $cssUrl, $nonce) ?? $this->fetch($font, $cssUrl, $nonce);
@@ -57,13 +64,19 @@ class GoogleFonts
      * @return Fonts[]
      * @throws Exception
      */
-    public function loadMany(array $options = [], bool $forceDownload = false): array
+    public function loadMany(array $options = [], bool $forceDownload = false, FetchMode $mode = FetchMode::All): array
     {
         $fonts = $this->resolveCssFonts($options);
 
-        $this->downloadTtfFonts($fonts->keys()->all(), $forceDownload);
+        if ($mode->shouldFetchTtf()) {
+            $this->downloadTtfFonts($fonts->keys()->all(), $forceDownload);
+        }
 
         try {
+            if (! $mode->shouldFetchCss()) {
+                return $fonts->map(fn (array $font) => new Fonts(googleFontsUrl: $font['url'], nonce: $font['nonce']))->toArray();
+            }
+
             return $forceDownload
                 ? $this->fetchMany($fonts)
                 : $this->loadManyFromLocalOrFetch($fonts);

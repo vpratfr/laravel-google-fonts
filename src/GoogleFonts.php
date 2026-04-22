@@ -15,6 +15,9 @@ use RuntimeException;
 
 class GoogleFonts
 {
+    protected array $cssFonts;
+    protected array $ttfFonts;
+
     public function __construct(
         protected Filesystem $filesystem,
         protected string $path,
@@ -25,6 +28,8 @@ class GoogleFonts
         protected bool $preload,
         protected int $poolSize,
     ) {
+        $this->cssFonts = $this->pluckFonts('css');
+        $this->ttfFonts = $this->pluckFonts('ttf');
     }
 
     /**
@@ -34,89 +39,128 @@ class GoogleFonts
     {
         ['font' => $font, 'nonce' => $nonce] = $this->parseOptions($options);
 
-        $url = $this->resolveFont($font);
+        $this->downloadTtfFonts([$font], $forceDownload);
+
+        $cssUrl = $this->resolveCssFont($font);
 
         try {
-            if ($forceDownload) {
-                return $this->fetch($url, $nonce);
-            }
-
-            return $this->loadLocal($url, $nonce) ?? $this->fetch($url, $nonce);
+            return $forceDownload
+                ? $this->fetch($font, $cssUrl, $nonce)
+                : $this->loadLocal($font, $cssUrl, $nonce) ?? $this->fetch($font, $cssUrl, $nonce);
         } catch (Exception $exception) {
-            if (! $this->fallback) {
-                throw $exception;
-            }
-
-            return new Fonts(googleFontsUrl: $url, nonce: $nonce);
+            return $this->handleException($exception, $cssUrl, $nonce);
         }
     }
 
     /**
      * @param array<string|array> $options
-     *
      * @return Fonts[]
      * @throws Exception
      */
     public function loadMany(array $options = [], bool $forceDownload = false): array
     {
-        $fonts = $this->resolveFonts($options);
+        $fonts = $this->resolveCssFonts($options);
+
+        $this->downloadTtfFonts($fonts->keys()->all(), $forceDownload);
 
         try {
-            if ($forceDownload) {
-                return $this->fetchMany($fonts);
-            }
-
-            $loaded = $fonts->map(fn (array $font) => $this->loadLocal($font['url'], $font['nonce']));
-            $missing = $fonts->keys()
-                ->filter(fn (string $font) => $loaded->get($font) === null)
-                ->mapWithKeys(fn (string $font) => [$font => $fonts->get($font)]);
-
-            if ($missing->isNotEmpty()) {
-                return $this->fetchMany($missing);
-            }
-
-            return $loaded->values()->all();
+            return $forceDownload
+                ? $this->fetchMany($fonts)
+                : $this->loadManyFromLocalOrFetch($fonts);
         } catch (Exception $exception) {
-            if (! $this->fallback) {
-                throw $exception;
-            }
-
-            return $fonts
-                ->map(fn (array $font) => new Fonts(googleFontsUrl: $font['url'], nonce: $font['nonce']))
-                ->values()
-                ->all();
+            return $this->handleManyException($exception, $fonts);
         }
     }
 
-    protected function resolveFont(string $font): string
+    public function fontPath(string $font, string $path = ''): string
     {
-        if (! isset($this->fonts[$font])) {
-            throw new RuntimeException("Font `{$font}` doesn't exist");
+        return $this->path($font, $path);
+    }
+
+    public function getPreload(string $url): string
+    {
+        return sprintf('<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>', $url);
+    }
+
+    protected function loadManyFromLocalOrFetch(Collection $fonts): array
+    {
+        $loaded = $fonts->mapWithKeys(
+            fn (array $config, string $font) => [$font => $this->loadLocal($font, $config['url'], $config['nonce'])]
+        );
+
+        $missing = $fonts->keys()
+            ->filter(fn (string $font) => $loaded->get($font) === null)
+            ->flatMap(fn (string $font) => [$font => $fonts->get($font)]);
+
+        return $missing->isNotEmpty()
+            ? $this->fetchMany($missing)
+            : $loaded->values()->all();
+    }
+
+    protected function loadLocal(string $font, string $url, ?string $nonce): ?Fonts
+    {
+        if (! $this->filesystem->exists($this->path($font, 'fonts.css'))) {
+            return null;
         }
 
-        return $this->fonts[$font];
+        $localizedCss = $this->filesystem->get($this->path($font, 'fonts.css'));
+        $preloadMeta = $this->readPreloadMeta($font);
+
+        return $this->makeFontsObject($font, $url, $localizedCss, $preloadMeta, $nonce);
+    }
+
+    protected function readPreloadMeta(string $font): ?string
+    {
+        $path = $this->path($font, 'preload.html');
+
+        return $this->filesystem->exists($path)
+            ? $this->filesystem->get($path)
+            : null;
     }
 
     /**
-     * @param array<string|array> $options
-     *
-     * @return Collection<string, array{url: string, nonce: ?string}>
+     * @throws RequestException
+     * @throws ConnectionException
      */
-    protected function resolveFonts(array $options): Collection
+    protected function fetch(string $font, string $url, ?string $nonce): Fonts
     {
-        return collect($options)
-            ->map(fn (string|array $o) => $this->parseOptions($o))
-            ->mapWithKeys(fn (array $option) => [
-                $option['font'] => [
-                    'url' => $this->resolveFont($option['font']),
-                    'nonce' => $option['nonce'],
-                ],
-            ]);
+        $css = $this->fetchCss($url);
+        $woffUrls = $this->extractFontUrls($css);
+        $woffResponses = $this->fetchWoffFiles($woffUrls);
+
+        [$localizedCss, $preloadMeta] = $this->localizeFonts($font, $css, $woffUrls, $woffResponses);
+
+        return $this->makeFontsObject($font, $url, $localizedCss, $preloadMeta, $nonce);
     }
 
     /**
-     * @param Collection<array{font: string, url: string, nonce: ?string}> $fonts
-     *
+     * @throws RequestException
+     * @throws ConnectionException
+     */
+    protected function fetchCss(string $url): string
+    {
+        return Http::withHeaders(['User-Agent' => $this->userAgent])
+            ->get($url)
+            ->throw()
+            ->body();
+    }
+
+    /**
+     * @param string[] $woffUrls
+     * @return array<string, Response>
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    protected function fetchWoffFiles(array $woffUrls): array
+    {
+        return array_combine(
+            $woffUrls,
+            array_map(fn (string $u) => Http::get($u)->throw(), $woffUrls)
+        );
+    }
+
+    /**
+     * @param Collection<string, array{url: string, nonce: ?string}> $fonts
      * @return Fonts[]
      */
     protected function fetchMany(Collection $fonts): array
@@ -126,61 +170,54 @@ class GoogleFonts
         $woffResponses = $this->fetchWoffResponses($woffUrls);
 
         return collect($fontMap)
-            ->map(function ($data) use ($woffResponses) {
-                [$localizedCss, $preloadMeta] = $this->localizeFonts(
-                    $data['url'],
-                    $data['css'],
-                    $data['woff'],
-                    $woffResponses
-                );
-
-                return $this->makeFontsObject($data['url'], $localizedCss, $preloadMeta, $data['nonce']);
-            })
+            ->mapWithKeys(fn (array $data, string $font) => [
+                $font => $this->buildFontFromMap($font, $data, $woffResponses),
+            ])
             ->values()
             ->all();
     }
 
+    protected function buildFontFromMap(string $font, array $data, array $woffResponses): Fonts
+    {
+        [$localizedCss, $preloadMeta] = $this->localizeFonts(
+            $font,
+            $data['css'],
+            $data['woff'],
+            $woffResponses
+        );
+
+        return $this->makeFontsObject($font, $data['url'], $localizedCss, $preloadMeta, $data['nonce']);
+    }
+
     /**
      * @param Collection<string, array{url: string, nonce: ?string}> $fonts
-     *
      * @return array<string, Response>
      */
     protected function fetchCssResponses(Collection $fonts): array
     {
-        return $fonts
-            ->chunk($this->poolSize)
-            ->flatMap(function (Collection $chunk) {
-                return Http::pool(function (Pool $pool) use ($chunk) {
-                    foreach ($chunk as $font => $option) {
-                        $pool
-                            ->as((string) $font)
-                            ->withHeader('User-Agent', $this->userAgent)
-                            ->get($option['url']);
-                    }
-                });
-            })
-            ->map(function ($response) {
-                $response->throw();
-
-                return $response;
-            })
+        return $this->poolRequests($fonts, fn (string $font, array $option) => [$font, $option['url']])
+            ->map(fn (Response $response) => $response->throw())
             ->toArray();
     }
 
     /**
-    * @param Collection $fonts
-    * @param array<string, Response> $cssResponses
-    *
-    * @return array{
-    *     0: array<string, array{
-    *         url: string,
-    *         nonce: ?string,
-    *         css: string,
-    *         woff: string[]
-    *     }>,
-    *     1: string[]
-    * }
-    */
+     * @param string[] $woffUrls
+     * @return array<string, Response>
+     */
+    protected function fetchWoffResponses(array $woffUrls): array
+    {
+        $keyed = collect($woffUrls)->mapWithKeys(fn (string $url) => [$url => $url]);
+
+        return $this->poolRequests($keyed, fn (string $url) => [$url, $url])
+            ->map(fn (Response $response) => $response->throw())
+            ->toArray();
+    }
+
+    /**
+     * @param Collection<string, array{url: string, nonce: ?string}> $fonts
+     * @param array<string, Response> $cssResponses
+     * @return array{0: array<string, array{url: string, nonce: ?string, css: string, woff: string[]}>, 1: string[]}
+     */
     protected function buildFontMap(Collection $fonts, array $cssResponses): array
     {
         $fontMap = [];
@@ -207,165 +244,147 @@ class GoogleFonts
 
     /**
      * @param string[] $woffUrls
-     *
-     * @return array<string, Response>
-     */
-    protected function fetchWoffResponses(array $woffUrls): array
-    {
-        return collect($woffUrls)
-            ->chunk($this->poolSize)
-            ->flatMap(function ($chunk) {
-                return Http::pool(function (Pool $pool) use ($chunk) {
-                    return collect($chunk)->mapWithKeys(function ($url) use ($pool) {
-                        return [
-                            $url => $pool
-                                ->as($url)
-                                ->withHeader('User-Agent', $this->userAgent)
-                                ->get($url),
-                        ];
-                    })->toArray();
-                });
-            })
-            ->map(function ($response) {
-                $response->throw();
-
-                return $response;
-            })
-            ->toArray();
-    }
-
-    protected function loadLocal(string $url, ?string $nonce): ?Fonts
-    {
-        if (! $this->filesystem->exists($this->path($url, 'fonts.css'))) {
-            return null;
-        }
-
-        $localizedCss = $this->filesystem->get($this->path($url, 'fonts.css'));
-
-        $preloadMeta = $this->filesystem->exists($this->path($url, 'preload.html'))
-            ? $this->filesystem->get($this->path($url, 'preload.html'))
-            : null;
-
-        return $this->makeFontsObject($url, $localizedCss, $preloadMeta, $nonce);
-    }
-
-    /**
-     * @throws RequestException
-     * @throws ConnectionException
-     */
-    protected function fetch(string $url, ?string $nonce): Fonts
-    {
-        $cssResponse = Http::withHeaders([
-            'User-Agent' => $this->userAgent,
-        ])->get($url)->throw();
-
-        $css = $cssResponse->body();
-
-        $woffUrls = $this->extractFontUrls($css);
-
-        $woffResponses = array_combine(
-            $woffUrls,
-            array_map(fn ($u) => Http::get($u)->throw(), $woffUrls)
-        );
-
-        [$localizedCss, $preloadMeta] = $this->localizeFonts($url, $css, $woffUrls, $woffResponses);
-
-        return $this->makeFontsObject($url, $localizedCss, $preloadMeta, $nonce);
-    }
-
-    /**
-     * @param string[] $woffUrls
      * @param array<string, Response> $responses
-     *
      * @return array{0: string, 1: string}
      */
-    protected function localizeFonts(
-        string $url,
-        string $css,
-        array $woffUrls,
-        array $responses
-    ): array {
+    protected function localizeFonts(string $font, string $css, array $woffUrls, array $responses): array
+    {
         $localizedCss = $css;
         $preloadMeta = '';
 
         foreach ($woffUrls as $woffUrl) {
-            $response = $responses[$woffUrl] ?? null;
-
-            if (! $response) {
-                continue;
-            }
-
-            $file = $this->localizeFontUrl($woffUrl);
-
-            $this->filesystem->put($this->path($url, $file), $response->body());
-
-            $localUrl = $this->filesystem->url($this->path($url, $file));
-            $preloadMeta .= $this->getPreload($localUrl) . "\n";
-            $localizedCss = str_replace($woffUrl, $localUrl, $localizedCss);
+            [$localizedCss, $preloadMeta] = $this->localizeFont(
+                $font, $woffUrl, $responses[$woffUrl] ?? null, $localizedCss, $preloadMeta
+            );
         }
 
-        $this->persistFont($url, $localizedCss, $preloadMeta);
+        $this->persistFont($font, $localizedCss, $preloadMeta);
 
         return [$localizedCss, $preloadMeta];
     }
 
-    protected function persistFont(string $url, string $localizedCss, string $preloadMeta): void
-    {
-        $this->filesystem->put($this->path($url, 'fonts.css'), $localizedCss);
-        $this->filesystem->put($this->path($url, 'preload.html'), $preloadMeta);
+    protected function localizeFont(
+        string $font,
+        string $woffUrl,
+        ?Response $response,
+        string $css,
+        string $preloadMeta
+    ): array {
+        if (! $response) {
+            return [$css, $preloadMeta];
+        }
+
+        $file = $this->localizeFontUrl($woffUrl);
+        $this->filesystem->put($this->path($font, $file), $response->body());
+
+        $localUrl = $this->filesystem->url($this->path($font, $file));
+
+        return [
+            str_replace($woffUrl, $localUrl, $css),
+            $preloadMeta . $this->getPreload($localUrl) . "\n",
+        ];
     }
 
-    protected function makeFontsObject(
-        string $url,
-        string $localizedCss,
-        ?string $preloadMeta,
-        ?string $nonce
-    ): Fonts {
-        return new Fonts(
-            googleFontsUrl: $url,
-            localizedUrl: $this->filesystem->url($this->path($url, 'fonts.css')),
-            localizedCss: $localizedCss,
-            nonce: $nonce,
-            preferInline: $this->inline,
-            preloadMeta: $preloadMeta,
-            preload: $this->preload,
+    protected function persistFont(string $font, string $localizedCss, string $preloadMeta): void
+    {
+        $this->filesystem->put($this->path($font, 'fonts.css'), $localizedCss);
+        $this->filesystem->put($this->path($font, 'preload.html'), $preloadMeta);
+    }
+
+    /**
+     * @throws RequestException
+     */
+    protected function downloadTtfFonts(array $fonts, bool $forceDownload = false): void
+    {
+        $map = $this->resolveTtfMap($fonts, $forceDownload);
+
+        if ($map->isEmpty()) {
+            return;
+        }
+
+        $responses = $this->poolRequests($map, fn (string $font, string $url) => [$font, $url]);
+
+        foreach ($map->keys() as $font) {
+            $this->saveTtfFont($font, $responses[$font] ?? null);
+        }
+    }
+
+    protected function resolveTtfMap(array $fonts, bool $forceDownload): Collection
+    {
+        $map = collect($fonts)
+            ->mapWithKeys(fn (string $font) => [$font => $this->ttfFonts[$font] ?? null])
+            ->filter();
+
+        if ($forceDownload) {
+            return $map;
+        }
+
+        return $map->filter(
+            fn (string $url, string $font) => ! $this->filesystem->exists($this->path($font, 'font.ttf'))
         );
     }
 
-    public function fontPath(string $font, string $path = ''): string
+    /**
+     * @throws RequestException
+     */
+    protected function saveTtfFont(string $font, ?Response $response): void
     {
-        return $this->path($this->resolveFont($font), $path);
+        if (! $response) {
+            return;
+        }
+
+        $response->throw();
+        $this->filesystem->put($this->path($font, 'font.ttf'), $response->body());
     }
 
-    protected function extractFontUrls(string $css): array
+    protected function poolRequests(Collection $items, callable $resolver): Collection
     {
-        $matches = [];
-        preg_match_all('/url\((https:\/\/fonts.gstatic.com\/[^)]+)\)/', $css, $matches);
-
-        return array_unique($matches[1] ?? []);
+        return $items
+            ->chunk($this->poolSize)
+            ->flatMap(fn (Collection $chunk) => $this->sendPoolChunk($chunk, $resolver));
     }
 
-    protected function localizeFontUrl(string $path): string
+    protected function sendPoolChunk(Collection $chunk, callable $resolver): array
     {
-        // Google Fonts seem to have recently changed their URL structure to one that no longer contains a file
-        // extension (see https://github.com/spatie/laravel-google-fonts/issues/40). We account for that by falling back
-        // to 'woff2' in that case.
-        $pathComponents = explode('.', str_replace('https://fonts.gstatic.com/', '', $path));
-        $path = $pathComponents[0];
-        $extension = $pathComponents[1] ?? 'woff2';
+        return Http::pool(function (Pool $pool) use ($chunk, $resolver) {
+            $requests = [];
 
-        return implode('.', [Str::slug($path), $extension]);
+            foreach ($chunk as $key => $item) {
+                [$id, $url] = $resolver($key, $item);
+
+                $requests[$id] = $pool
+                    ->as($id)
+                    ->withHeader('User-Agent', $this->userAgent)
+                    ->get($url);
+            }
+
+            return $requests;
+        });
     }
 
-    protected function path(string $url, string $path = ''): string
+    protected function resolveCssFont(string $font): string
     {
-        $segments = collect([
-            $this->path,
-            substr(md5($url), 0, 10),
-            $path,
-        ]);
+        if (! isset($this->cssFonts[$font])) {
+            throw new RuntimeException("Font `$font` doesn't exist");
+        }
 
-        return $segments->filter()->join('/');
+        return $this->cssFonts[$font];
+    }
+
+    /**
+     * @param array<string|array> $options
+     * @return Collection<string, array{url: string, nonce: ?string}>
+     */
+    protected function resolveCssFonts(array $options): Collection
+    {
+        return collect($options)
+            ->map(fn (string|array $o) => $this->parseOptions($o))
+            ->mapWithKeys(fn (array $option) => [
+                $option['font'] => [
+                    'url' => $this->resolveCssFont($option['font']),
+                    'nonce' => $option['nonce'],
+                ],
+            ]);
     }
 
     protected function parseOptions(string|array $options): array
@@ -380,8 +399,90 @@ class GoogleFonts
         ];
     }
 
-    public function getPreload(string $url): string
+    /**
+     * @throws Exception
+     */
+    protected function handleException(Exception $exception, string $cssUrl, ?string $nonce): Fonts
     {
-        return sprintf('<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>', $url);
+        if (! $this->fallback) {
+            throw $exception;
+        }
+
+        return new Fonts(googleFontsUrl: $cssUrl, nonce: $nonce);
+    }
+
+    /**
+     * @param Collection<string, array{url: string, nonce: ?string}> $fonts
+     * @return Fonts[]
+     * @throws Exception
+     */
+    protected function handleManyException(Exception $exception, Collection $fonts): array
+    {
+        if (! $this->fallback) {
+            throw $exception;
+        }
+
+        return $fonts
+            ->map(fn (array $font) => new Fonts(googleFontsUrl: $font['url'], nonce: $font['nonce']))
+            ->values()
+            ->all();
+    }
+
+    protected function makeFontsObject(
+        string $font,
+        string $url,
+        string $localizedCss,
+        ?string $preloadMeta,
+        ?string $nonce
+    ): Fonts {
+        return new Fonts(
+            googleFontsUrl: $url,
+            localizedUrl: $this->filesystem->url($this->path($font, 'fonts.css')),
+            localizedCss: $localizedCss,
+            nonce: $nonce,
+            preferInline: $this->inline,
+            preloadMeta: $preloadMeta,
+            preload: $this->preload,
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function extractFontUrls(string $css): array
+    {
+        preg_match_all('/url\((https:\/\/fonts.gstatic.com\/[^)]+)\)/', $css, $matches);
+
+        return array_unique($matches[1] ?? []);
+    }
+
+    protected function localizeFontUrl(string $path): string
+    {
+        // Google Fonts changed their URL structure to no longer contain a file
+        // extension (see https://github.com/spatie/laravel-google-fonts/issues/40).
+        // We fall back to 'woff2' in that case.
+        $pathComponents = explode('.', str_replace('https://fonts.gstatic.com/', '', $path));
+        $path = $pathComponents[0];
+        $extension = $pathComponents[1] ?? 'woff2';
+
+        return implode('.', [Str::slug($path), $extension]);
+    }
+
+    protected function path(string $font, string $path = ''): string
+    {
+        return collect([$this->path, substr(md5($font), 0, 10), $path])
+            ->filter()
+            ->join('/');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function pluckFonts(string $by): array
+    {
+        return collect($this->fonts)
+            ->mapWithKeys(fn (array $config, string $font) => [$font => $config[$by] ?? null])
+            ->filter()
+            ->toArray();
     }
 }

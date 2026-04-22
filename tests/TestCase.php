@@ -38,7 +38,10 @@ class TestCase extends Orchestra
         ));
 
         config()->set('google-fonts.fonts', [
-            'inter' => 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap',
+            'inter' => [
+                'css' => 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap',
+                'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf',
+            ]
         ]);
         config()->set('google-fonts.disk', 'fonts');
         config()->set('google-fonts.path', '');

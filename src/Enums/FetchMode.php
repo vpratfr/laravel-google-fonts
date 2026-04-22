@@ -17,4 +17,5 @@ enum FetchMode: string
     {
         return $this === self::Ttf || $this === self::All;
     }
+    
 }

@@ -2,9 +2,9 @@
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Spatie\GoogleFonts\Enums\FetchMode;
 use Spatie\GoogleFonts\Fonts;
 use Spatie\GoogleFonts\GoogleFonts;
-use Spatie\GoogleFonts\Enums\FetchMode;
 
 use function Spatie\Snapshots\assertMatchesFileSnapshot;
 use function Spatie\Snapshots\assertMatchesHtmlSnapshot;
@@ -31,7 +31,7 @@ it('loads google fonts from a string or array option', function (string|array $o
     expect($fonts->url())->toEqual($this->disk()->url($expectedFilePath));
 })->with([
     'string option' => ['inter'],
-    'array option'  => [['font' => 'inter']],
+    'array option' => [['font' => 'inter']],
 ]);
 
 it('serves from local cache on second load without re-downloading', function () {
@@ -105,7 +105,7 @@ it('falls back to google fonts url when fallback is enabled', function (string|a
         ->and($fonts->url())->toEqual('moo');
 })->with([
     'string option' => ['cow'],
-    'array option'  => [['font' => 'cow']],
+    'array option' => [['font' => 'cow']],
 ]);
 
 it('throws RuntimeException when font does not exist', function () {
@@ -226,7 +226,7 @@ it('re-downloads ttf when forceDownload is true', function () {
 it('loads multiple fonts', function (array $options) {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     $results = app(GoogleFonts::class)->loadMany($options, forceDownload: true);
@@ -236,13 +236,13 @@ it('loads multiple fonts', function (array $options) {
         ->each->toBeInstanceOf(Fonts::class);
 })->with([
     'string options' => [['inter', 'code']],
-    'array options'  => [[['font' => 'inter'], ['font' => 'code']]],
+    'array options' => [[['font' => 'inter'], ['font' => 'code']]],
 ]);
 
 it('persists css and woff2 files for each font in loadMany', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
@@ -260,7 +260,7 @@ it('persists css and woff2 files for each font in loadMany', function () {
 it('returns fonts in the same order as the input', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     [$first, $second] = app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
@@ -272,7 +272,7 @@ it('returns fonts in the same order as the input', function () {
 it('returns localized urls in loadMany, not google fonts urls', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     $results = app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true);
@@ -292,7 +292,7 @@ it('handles a single font in loadMany identically to load()', function () {
 it('serves all fonts from local cache in loadMany without re-downloading', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     $googleFonts = app(GoogleFonts::class);
@@ -308,7 +308,7 @@ it('serves all fonts from local cache in loadMany without re-downloading', funct
 it('only re-downloads missing fonts in loadMany', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     $googleFonts = app(GoogleFonts::class);
@@ -329,7 +329,7 @@ it('only re-downloads missing fonts in loadMany', function () {
 it('preserves nonce per font in loadMany', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400'],
     ]);
 
     [$inter, $code] = app(GoogleFonts::class)->loadMany(
@@ -427,7 +427,7 @@ it('returns fonts without css when mode is TTF', function () {
 it('does not download any ttf in loadMany when mode is CSS', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700', 'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
     ]);
 
     app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true, mode: FetchMode::Css);
@@ -439,7 +439,7 @@ it('does not download any ttf in loadMany when mode is CSS', function () {
 it('downloads only ttf in loadMany when mode is TTF', function () {
     config()->set('google-fonts.fonts', [
         'inter' => ['css' => 'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;1,400;1,700', 'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf'],
-        'code'  => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
+        'code' => ['css' => 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400',  'ttf' => 'https://github.com/google/fonts/raw/refs/heads/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf'],
     ]);
 
     app(GoogleFonts::class)->loadMany(['inter', 'code'], forceDownload: true, mode: FetchMode::Ttf);

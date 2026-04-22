@@ -267,7 +267,11 @@ class GoogleFonts
 
         foreach ($woffUrls as $woffUrl) {
             [$localizedCss, $preloadMeta] = $this->localizeFont(
-                $font, $woffUrl, $responses[$woffUrl] ?? null, $localizedCss, $preloadMeta
+                $font,
+                $woffUrl,
+                $responses[$woffUrl] ?? null,
+                $localizedCss,
+                $preloadMeta
             );
         }
 

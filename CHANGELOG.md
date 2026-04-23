@@ -2,6 +2,11 @@
 
 All notable changes to `laravel-google-fonts` will be documented in this file.
 
+## 2.0.0 - 2026-04-23
+
+- Parallel Http requests for downloads
+- Allow downloading TTF files too
+
 ## 1.5.0 - 2026-02-22
 
 Add Laravel 13.x support

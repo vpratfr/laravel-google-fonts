@@ -13,8 +13,8 @@ class FetchGoogleFontsCommand extends Command
 
     public function handle()
     {
-        $newFontsOnly = $this->option('new-fonts-only') ?? false;
-        
+        $newFontsOnly = $this->option('new-fonts-only');
+
         $this->info('Start fetching Google Fonts...');
 
         collect(config('google-fonts.fonts'))
